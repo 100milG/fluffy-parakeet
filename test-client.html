@@ -1,0 +1,439 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reeva AI Chatbot — Test Client</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(17, 25, 40, 0.75);
+      --border: rgba(255, 255, 255, 0.08);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --bubble-user: #2563eb;
+      --bubble-bot: #1f2937;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(147, 51, 234, 0.15) 0px, transparent 50%);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      height: 85vh;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(17, 25, 40, 0.4);
+    }
+
+    .header-info h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .header-info p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.1);
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #10b981;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.4; }
+      50% { opacity: 1; }
+      100% { opacity: 0.4; }
+    }
+
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+
+    .message {
+      max-width: 80%;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .message.user {
+      align-self: flex-end;
+    }
+
+    .message.bot {
+      align-self: flex-start;
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .user .bubble {
+      background: var(--bubble-user);
+      color: #fff;
+      border-bottom-right-radius: 2px;
+    }
+
+    .bot .bubble {
+      background: var(--bubble-bot);
+      color: var(--text);
+      border-bottom-left-radius: 2px;
+      border: 1px solid var(--border);
+    }
+
+    .meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin: 0 4px;
+    }
+
+    .user .meta {
+      text-align: right;
+    }
+
+    .sidebar {
+      width: 300px;
+      border-left: 1px solid var(--border);
+      background: rgba(10, 15, 26, 0.4);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    .sidebar h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+
+    .pref-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+
+    .pref-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    .pref-val {
+      font-size: 0.9rem;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 6px;
+      min-height: 35px;
+      display: flex;
+      align-items: center;
+    }
+
+    .empty-val {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .input-area {
+      padding: 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      background: rgba(17, 25, 40, 0.4);
+    }
+
+    .chat-input {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .chat-input:focus {
+      border-color: var(--primary);
+    }
+
+    .send-btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 0 24px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .send-btn:hover {
+      background: var(--primary-hover);
+    }
+
+    .send-btn:disabled {
+      background: var(--text-muted);
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <div class="header-info">
+        <h1>Reeva AI Chatbot</h1>
+        <p>Local Test Environment — Module 4 (Explanation Engine)</p>
+      </div>
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span>Connected to :3001</span>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <div class="chat-container">
+        <div class="messages" id="messages-pane">
+          <div class="message bot">
+            <div class="bubble">Namaste! I am Reeva, your AI property assistant. What kind of flat are you looking for in Mumbai today?</div>
+            <div class="meta">Reeva • Just now</div>
+          </div>
+        </div>
+
+        <div class="input-area">
+          <input type="text" id="chat-input" class="chat-input" placeholder="Type your property requirements here..." autofocus autocomplete="off">
+          <button id="send-btn" class="send-btn">Send</button>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <h2>Preferences Extracted</h2>
+        <div class="pref-item">
+          <div class="pref-label">Localities</div>
+          <div class="pref-val" id="pref-localities"><span class="empty-val">Not extracted</span></div>
+        </div>
+        <div class="pref-item">
+          <div class="pref-label">BHK / Bedrooms</div>
+          <div class="pref-val" id="pref-bhk"><span class="empty-val">Not extracted</span></div>
+        </div>
+        <div class="pref-item">
+          <div class="pref-label">Max Budget</div>
+          <div class="pref-val" id="pref-budget"><span class="empty-val">Not extracted</span></div>
+        </div>
+        <div class="pref-item">
+          <div class="pref-label">Property Type</div>
+          <div class="pref-val" id="pref-prop-type"><span class="empty-val">Not extracted</span></div>
+        </div>
+        <div class="pref-item">
+          <div class="pref-label">Furnishing Status</div>
+          <div class="pref-val" id="pref-furnished"><span class="empty-val">Not extracted</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:3001/api/chat';
+    let sessionId = null;
+
+    const inputField = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-btn');
+    const messagesPane = document.getElementById('messages-pane');
+
+    function formatBudget(val) {
+      if (!val) return '<span class="empty-val">Not extracted</span>';
+      if (val >= 10000000) {
+        return `\u20b9${(val / 10000000).toFixed(1)} Crore`;
+      }
+      return `\u20b9${(val / 100000).toFixed(0)} Lakhs`;
+    }
+
+    function updateSidebar(preferences) {
+      document.getElementById('pref-localities').innerHTML = 
+        preferences.localities && preferences.localities.length 
+          ? preferences.localities.join(', ') 
+          : '<span class="empty-val">Not extracted</span>';
+
+      document.getElementById('pref-bhk').innerHTML = 
+        preferences.bedroomsMin 
+          ? `${preferences.bedroomsMin} BHK` 
+          : '<span class="empty-val">Not extracted</span>';
+
+      document.getElementById('pref-budget').innerHTML = formatBudget(preferences.budgetMax);
+
+      document.getElementById('pref-prop-type').innerHTML = 
+        preferences.propertyType 
+          ? preferences.propertyType 
+          : '<span class="empty-val">Not extracted</span>';
+
+      document.getElementById('pref-furnished').innerHTML = 
+        preferences.furnishedStatus 
+          ? preferences.furnishedStatus 
+          : '<span class="empty-val">Not extracted</span>';
+    }
+
+    function addMessage(role, content) {
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${role === 'user' ? 'user' : 'bot'}`;
+      
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      // Format markdown bold
+      let formatted = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      // Format simple newlines
+      formatted = formatted.replace(/\n/g, '<br/>');
+      bubble.innerHTML = formatted;
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.innerText = `${role === 'user' ? 'You' : 'Reeva'} • ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+
+      msgDiv.appendChild(bubble);
+      msgDiv.appendChild(meta);
+      messagesPane.appendChild(msgDiv);
+      messagesPane.scrollTop = messagesPane.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const messageText = inputField.value.trim();
+      if (!messageText) return;
+
+      addMessage('user', messageText);
+      inputField.value = '';
+      inputField.disabled = true;
+      sendButton.disabled = true;
+
+      const typingDiv = document.createElement('div');
+      typingDiv.className = 'message bot';
+      typingDiv.id = 'typing-indicator';
+      typingDiv.innerHTML = '<div class="bubble">Typing...</div>';
+      messagesPane.appendChild(typingDiv);
+      messagesPane.scrollTop = messagesPane.scrollHeight;
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            message: messageText
+          })
+        });
+
+        const data = await response.json();
+        
+        document.getElementById('typing-indicator').remove();
+
+        if (data.reply) {
+          sessionId = data.sessionId;
+          addMessage('model', data.reply);
+          if (data.preferences) {
+            updateSidebar(data.preferences);
+          }
+        } else {
+          addMessage('model', 'Oops, I encountered an issue. Please try again.');
+        }
+      } catch (err) {
+        document.getElementById('typing-indicator').remove();
+        addMessage('model', 'Failed to connect to the server. Make sure the server is running on http://localhost:3001');
+      } finally {
+        inputField.disabled = false;
+        sendButton.disabled = false;
+        inputField.focus();
+      }
+    }
+
+    sendButton.addEventListener('click', sendMessage);
+    inputField.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+  </script>
+</body>
+</html>

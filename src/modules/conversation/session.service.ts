@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
-import { Session, Turn, UserPreferences } from '../../shared/types/session.types';
+import { Session, Turn, UserPreferences, ScoredProperty } from '../../shared/types/session.types';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONCEPT: The Session Store
@@ -36,6 +37,7 @@ export function createSession(): Session {
     sessionId: randomUUID(),
     turns: [],
     preferences: {},
+    lastRecommendations: [],
     createdAt: new Date(),
     lastActiveAt: new Date(),
   };
@@ -43,6 +45,7 @@ export function createSession(): Session {
   sessionStore.set(session.sessionId, session);
   return session;
 }
+
 
 /**
  * Retrieves a session by its ID.
@@ -105,6 +108,17 @@ export function updatePreferences(
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
   session.preferences = { ...session.preferences, ...partial };
+  session.lastActiveAt = new Date();
+}
+
+/**
+ * Persists the most recent recommendation results in the session.
+ * The explanation engine uses these to answer "why listing 2?" questions.
+ */
+export function saveRecommendations(sessionId: string, listings: ScoredProperty[]): void {
+  const session = sessionStore.get(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+  session.lastRecommendations = listings;
   session.lastActiveAt = new Date();
 }
 

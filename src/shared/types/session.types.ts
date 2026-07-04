@@ -43,9 +43,11 @@ export interface Session {
   sessionId: string;
   turns: Turn[];
   preferences: Partial<UserPreferences>;
+  lastRecommendations: ScoredProperty[];  // the properties shown in the last recommendation turn
   createdAt: Date;
   lastActiveAt: Date;
 }
+
 
 /**
  * Request body for the POST /api/chat endpoint.
@@ -63,4 +65,37 @@ export interface ChatResponse {
   reply: string;
   preferences: Partial<UserPreferences>;  // current extracted preferences
   turnCount: number;                       // how many turns so far
+}
+
+// ─── Module 3 — Recommendation Engine Types ──────────────────────────────────
+
+/**
+ * A slim representation of a DB property row used inside the recommendation
+ * engine. We only pull the fields we need for scoring + display — avoids
+ * loading the full Prisma type everywhere.
+ */
+export interface RawProperty {
+  id: string;
+  title: string;
+  price: number | null;
+  beds: number | null;
+  baths: number | null;
+  sqft: number | null;
+  address: string | null;
+  localityName: string | null;    // resolved from the Locality relation
+  propertyType: string;
+  listingType: string;
+  furnishedStatus: string | null;
+  isResale: boolean;
+  priceSqft: number | null;
+}
+
+/**
+ * A property that has been scored against the user's preferences.
+ * The `breakdown` field shows how each signal contributed — used by
+ * the explanation engine (Module 4) and for debugging.
+ */
+export interface ScoredProperty extends RawProperty {
+  score: number;                          // 0–100
+  breakdown: Record<string, number>;      // signal → points awarded
 }
