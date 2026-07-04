@@ -1,0 +1,31 @@
+{
+  "name": "ai-chatbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "ts-node src/app.ts",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:import": "ts-node scripts/import.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@prisma/client": "^7.8.0",
+    "csv-parser": "^3.2.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "prisma": "^7.8.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.0"
+  }
+}
