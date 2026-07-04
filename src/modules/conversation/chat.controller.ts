@@ -3,57 +3,55 @@ import {
   createSession,
   getSession,
   addTurn,
+  updatePreferences,
   getStoreStats,
 } from './session.service';
 import { ChatRequest, ChatResponse } from '../../shared/types/session.types';
+import { extractPreferences, mergePreferences, getMissingFields, generateFollowUp } from '../extraction/preference.extractor';
+import { generateReply } from '../extraction/gemini.service';
+import { getRateLimitStats } from '../../middleware/rate.limiter';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CONCEPT: Controllers vs Services
+// CONCEPT: The Module 2 chat pipeline
 //
-// A controller handles the HTTP layer:
-//   - reads the request body
-//   - validates inputs
-//   - calls the service (business logic)
-//   - formats and sends the response
+// Every incoming message now goes through these steps:
 //
-// A service contains the business logic:
-//   - knows nothing about HTTP
-//   - just operates on data
+//  1. Resolve session (create or look up)
+//  2. Store user message as a turn
+//  3. EXTRACT preferences from the message (rule-based, free, instant)
+//  4. MERGE extracted preferences with session's accumulated preferences
+//  5. PERSIST the updated preferences back to the session
+//  6. CHECK completeness (what's still missing?)
+//  7. Generate a FOLLOW-UP question if something critical is missing
+//  8. Call GEMINI to produce a natural conversational reply
+//     (Gemini knows the preferences + what's missing + the follow-up question)
+//  9. Store the AI reply as a turn
+// 10. Return the response
 //
-// This separation makes testing much easier — you can test the service
-// without needing to simulate an HTTP request.
+// Notice that step 8 (LLM) happens AFTER step 3-7 (rules).
+// The LLM gets the full context so it can write an appropriate response.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * POST /api/chat
  *
- * Handles an incoming chat message.
- *
- * Flow:
- * 1. If no sessionId in body → create a new session
- * 2. If sessionId provided → look it up (error if not found / expired)
- * 3. Store the user's message as a turn
- * 4. Generate a placeholder reply (Module 2 will replace this with real AI)
- * 5. Store the reply as a turn
- * 6. Return the sessionId + reply + current preferences
+ * Main chat handler — now wired to Module 2 preference extraction + Gemini.
  */
 export async function handleChat(req: Request, res: Response): Promise<void> {
   const { sessionId, message } = req.body as ChatRequest;
 
-  // ── Input validation ──────────────────────────────────────────────────────
+  // ── Input validation ────────────────────────────────────────────────────
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
     res.status(400).json({ error: 'message is required and must be a non-empty string' });
     return;
   }
 
-  // ── Session resolution ────────────────────────────────────────────────────
+  // ── Session resolution ──────────────────────────────────────────────────
   let session;
 
   if (!sessionId) {
-    // First message — create a fresh session
     session = createSession();
   } else {
-    // Continuing conversation — look up existing session
     session = getSession(sessionId);
     if (!session) {
       res.status(404).json({
@@ -63,35 +61,51 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
     }
   }
 
-  // ── Store user's message ──────────────────────────────────────────────────
-  addTurn(session.sessionId, 'user', message.trim());
+  const trimmedMessage = message.trim();
 
-  // ── Generate reply ────────────────────────────────────────────────────────
-  //
-  // CONCEPT: This is a placeholder reply.
-  //
-  // In Module 2, we will replace this with real logic:
-  //   1. Run the preference extractor (rule-based, free)
-  //   2. Check completeness (what's still missing?)
-  //   3. Either ask a follow-up question OR call the LLM
-  //
-  // For now, we just acknowledge receipt so we can verify the session
-  // infrastructure works correctly before adding any AI logic on top.
-  //
-  const reply = generatePlaceholderReply(message.trim(), session.turns.length);
+  // ── Store user's message ────────────────────────────────────────────────
+  addTurn(session.sessionId, 'user', trimmedMessage);
 
-  // ── Store model's reply ───────────────────────────────────────────────────
+  // ── Step 3: Extract preferences from this message ───────────────────────
+  //
+  // CONCEPT: We only extract from the LATEST message, not the full history.
+  // The mergePreferences() call below accumulates results across all turns.
+  //
+  const newPrefs = extractPreferences(trimmedMessage);
+
+  // ── Step 4: Merge with existing preferences ─────────────────────────────
+  const updatedPrefs = mergePreferences(session.preferences, newPrefs);
+
+  // ── Step 5: Persist back to session ────────────────────────────────────
+  updatePreferences(session.sessionId, updatedPrefs);
+
+  // ── Step 6-7: Completeness check + follow-up question ──────────────────
+  const missingFields = getMissingFields(updatedPrefs);
+  const followUpQuestion = generateFollowUp(missingFields);
+
+  // ── Step 8: Call Gemini ─────────────────────────────────────────────────
+  //
+  // We fetch the FRESH session (post preference update) to get the latest turns.
+  //
+  const freshSession = getSession(session.sessionId)!;
+
+  const reply = await generateReply(freshSession.turns, {
+    preferences: updatedPrefs,
+    missingFields,
+    followUpQuestion,
+  });
+
+  // ── Step 9: Store AI reply ──────────────────────────────────────────────
   addTurn(session.sessionId, 'model', reply);
 
-  // ── Refresh session reference after mutations ─────────────────────────────
-  const updatedSession = getSession(session.sessionId)!;
+  // ── Step 10: Send response ──────────────────────────────────────────────
+  const finalSession = getSession(session.sessionId)!;
 
-  // ── Send response ─────────────────────────────────────────────────────────
   const response: ChatResponse = {
-    sessionId: updatedSession.sessionId,
+    sessionId: finalSession.sessionId,
     reply,
-    preferences: updatedSession.preferences,
-    turnCount: updatedSession.turns.length,
+    preferences: finalSession.preferences,
+    turnCount: finalSession.turns.length,
   };
 
   res.status(200).json(response);
@@ -100,8 +114,8 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
 /**
  * GET /api/chat/:sessionId
  *
- * Returns the full session state for debugging and inspection.
- * Very useful during development to verify what the server has stored.
+ * Returns the full session state for debugging.
+ * Shows extracted preferences in real-time — very useful during development.
  */
 export function getSessionState(req: Request, res: Response): void {
   const sessionId = req.params['sessionId'] as string;
@@ -112,11 +126,15 @@ export function getSessionState(req: Request, res: Response): void {
     return;
   }
 
+  const missingFields = getMissingFields(session.preferences);
+
   res.status(200).json({
     sessionId: session.sessionId,
     turnCount: session.turns.length,
     turns: session.turns,
     preferences: session.preferences,
+    missingFields,
+    isComplete: missingFields.length === 0,
     createdAt: session.createdAt,
     lastActiveAt: session.lastActiveAt,
   });
@@ -124,26 +142,12 @@ export function getSessionState(req: Request, res: Response): void {
 
 /**
  * GET /api/health
- *
- * Simple health check — confirms the server is running and shows
- * how many active sessions are in memory.
  */
-export function healthCheck(req: Request, res: Response): void {
+export function healthCheck(_req: Request, res: Response): void {
   res.status(200).json({
     status: 'ok',
-    module: 'Module 1 — Conversation & Session Layer',
+    module: 'Module 2 — Preference Extraction + Gemini',
     ...getStoreStats(),
+    ...getRateLimitStats(),
   });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Placeholder reply generator
-// This will be completely replaced in Module 2.
-// For now it just varies the response slightly based on turn count.
-// ─────────────────────────────────────────────────────────────────────────────
-function generatePlaceholderReply(message: string, turnCount: number): string {
-  if (turnCount === 1) {
-    return `Hello! I'm your AI real estate consultant. I received your message: "${message}". I'm setting up your session and will start helping you find properties shortly. (Module 1 placeholder — LLM coming in Module 2)`;
-  }
-  return `Got it! This is turn #${turnCount} in your conversation. You said: "${message}". Preference extraction and real responses are coming in Module 2.`;
 }

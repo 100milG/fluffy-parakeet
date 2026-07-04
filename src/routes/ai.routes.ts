@@ -4,6 +4,7 @@ import {
   getSessionState,
   healthCheck,
 } from '../modules/conversation/chat.controller';
+import { perIpRateLimit, globalDailyCap } from '../middleware/rate.limiter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONCEPT: Express Router
@@ -18,13 +19,16 @@ import {
 
 const router = Router();
 
-// Health check — always define this first so you can quickly verify the server is up
+// Health check — no rate limiting needed for this
 router.get('/health', healthCheck);
 
-// Main chat endpoint
-router.post('/chat', handleChat);
+// Main chat endpoint — rate limited:
+//   1. perIpRateLimit  → max 10 messages/minute per IP
+//   2. globalDailyCap  → max 150 Gemini calls/day globally
+router.post('/chat', perIpRateLimit, globalDailyCap, handleChat);
 
 // Session inspection — for debugging during development
-router.get('/chat/:sessionId', getSessionState);
+// perIpRateLimit is applied here too to prevent scraping
+router.get('/chat/:sessionId', perIpRateLimit, getSessionState);
 
 export default router;

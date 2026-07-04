@@ -1,14 +1,8 @@
 import express from 'express';
-import dotenv from 'dotenv';
 import aiRoutes from './routes/ai.routes';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONCEPT: dotenv
-//
-// dotenv reads your .env file and loads the key-value pairs into process.env.
-// We call this FIRST, before any other import that might need env variables.
-// ─────────────────────────────────────────────────────────────────────────────
-dotenv.config();
+// Note: dotenv is loaded in server.ts BEFORE this file is imported.
+// process.env is already populated by the time this code runs.
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
@@ -42,7 +36,7 @@ app.listen(PORT, () => {
   console.log(`  GET  http://localhost:${PORT}/api/health`);
   console.log(`  POST http://localhost:${PORT}/api/chat`);
   console.log(`  GET  http://localhost:${PORT}/api/chat/:sessionId`);
-  console.log(`\nModule 1 — Conversation & Session Layer is live.\n`);
+  console.log(`\nModule 2 — Preference Extraction + Gemini live.\n`);
 });
 
 export default app;
