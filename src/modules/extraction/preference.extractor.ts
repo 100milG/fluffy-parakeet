@@ -239,3 +239,46 @@ export function generateFollowUp(missing: string[]): string | null {
 
   return questions[field] ?? 'Could you tell me more about what you\'re looking for?';
 }
+
+export function isCommuteQuery(message: string): boolean {
+  const msg = message.toLowerCase();
+  const keywords = [
+    // Commute, Distance & Routing
+    'how far', 'commute', 'distance', 'minutes', 'travel time', 'reach',
+    'far away', 'walk', 'drive', 'get to', 'commuting', 'traffic', 'journey',
+    'duration', 'directions', 'route', 'map', 'traveling', 'travelling',
+    'walkable', 'walking distance', 'how long', 'where is', 'how to get',
+
+    // Proximity
+    'near', 'nearby', 'nearest', 'close', 'closeby', 'around here', 'vicinity',
+    'neighbourhood', 'neighborhood', 'surroundings', 'localities',
+
+    // Transit & Roads
+    'metro station', 'railway station', 'airport', 'highway', 'freeway',
+    'expressway', 'link road', 'flyover', 'toll', 'bus stop', 'monorail',
+    'train', 'cabs', 'rickshaw', 'auto', 'taxi', 'depot', 'terminal',
+
+    // Education
+    'school', 'college', 'university', 'coaching', 'class', 'playschool',
+    'kindergarten', 'academy', 'madarsa', 'madrasa',
+
+    // Healthcare
+    'hospital', 'clinic', 'pharmacy', 'chemist', 'doctor', 'dispensary',
+    'nursing home',
+
+    // Worship & Spiritual
+    'mosque', 'masjid', 'temple', 'church', 'gurudwara', 'synagogue',
+    'monastery',
+
+    // Recreation, Nature & Shopping
+    'park', 'garden', 'gym', 'fitness', 'club', 'pool', 'playground',
+    'stadium', 'sports', 'theatre', 'cinema', 'multiplex', 'mall',
+    'market', 'supermarket', 'grocery', 'mart', 'store', 'shop',
+    'bazaar', 'shopping',
+
+    // Food, Dining & Social
+    'restaurant', 'cafe', 'hotel', 'pub', 'bar', 'eatery', 'bakery',
+    'coffee', 'dining', 'amenities', 'infrastructure', 'facilities', 'attractions'
+  ];
+  return keywords.some(kw => msg.includes(kw));
+}

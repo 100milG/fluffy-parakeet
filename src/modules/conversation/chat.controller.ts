@@ -9,8 +9,8 @@ import {
   getStoreStats,
 } from './session.service';
 import { ChatRequest, ChatResponse, ScoredProperty } from '../../shared/types/session.types';
-import { extractPreferences, mergePreferences, getMissingFields, generateFollowUp } from '../extraction/preference.extractor';
-import { generateReply } from '../extraction/gemini.service';
+import { extractPreferences, mergePreferences, getMissingFields, generateFollowUp, isCommuteQuery } from '../extraction/preference.extractor';
+import { generateReply, generateGroundedReply } from '../extraction/gemini.service';
 import { getRateLimitStats } from '../../middleware/rate.limiter';
 import { getRecommendations } from '../recommendation/recommendation.service';
 import { isExplainIntent, extractListingIndex, generateExplanation } from '../explanation/explanation.engine';
@@ -105,8 +105,30 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
         preferences: currentSession.preferences,
         turnCount: currentSession.turns.length,
       } as ChatResponse);
-      return;
     }
+  }
+
+  // ── Step 3b: Detect "commute/transit/POI" intent (Module 6) ──────────────────
+  if (isCommuteQuery(trimmedMessage)) {
+    const currentSession = getSession(session.sessionId)!;
+    const stored = currentSession.lastRecommendations || [];
+
+    console.log(`[GroundingEngine] Processing commute/geography query for session: ${session.sessionId}`);
+    const groundedResult = await generateGroundedReply(
+      trimmedMessage,
+      stored,
+      currentSession.lastInteractionId
+    );
+
+    addTurn(session.sessionId, 'model', groundedResult.reply);
+
+    res.status(200).json({
+      sessionId: session.sessionId,
+      reply: groundedResult.reply,
+      preferences: currentSession.preferences,
+      turnCount: currentSession.turns.length,
+    } as ChatResponse);
+    return;
   }
 
   // ── Step 4: Rule-based fast preference extraction (Layer 1) ───────────────

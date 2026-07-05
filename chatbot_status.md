@@ -63,39 +63,33 @@ Our system is built on a key constraint: **The LLM (Gemini) must never query the
 - Implemented step execution handler loop resolving queries on PostgreSQL and submitting results back to the model.
 - Added **score threshold filter** (`SCORE_THRESHOLD = 50`): properties scoring below 50/100 are excluded before presenting results. If nothing qualifies, Reeva handles it conversationally.
 
+### **Module 6 — Grounding with Google Maps**
+- Added regex classifier to detect geographical, travel, and commute-related queries.
+- Built a grounded query builder extracting property latitude/longitude coordinates and address fields from PostgreSQL candidates.
+- Implemented hybrid routing executing grounded queries on `gemini-2.5-flash` with the `googleSearch` grounding tool cited sources.
+
+### **Module 8 — Locality Intelligence & POIs**
+- Mapped schema columns for `localityPoi` and `localityIntelligence` in database queries.
+- Dynamically calculated bargain deals (listing price/sqft vs area average).
+- Embedded localized neighborhood highlights (parks, schools, dining, transit) into Gemini's system instructions.
+
 ---
 
 ## 🚧 Upcoming Modules & Technical Designs
-
-### **Module 6 — Grounding with Google Maps**
-Allows users to ask geographical/lifestyle questions about properties.
-* **Commutes:** *"How far is this flat from BKC?"*
-* **POIs:** *"Are there hospitals near Listing 2?"*
-* **How it works:** Backend fetches the coordinates of the property. Gemini receives the coordinates and calls the Google Maps tool to reply with real-world geographical facts.
 
 ### **Module 7 — Semantic Search with Embeddings**
 Allows users to search using conceptual/lifestyle sentences instead of keywords.
 * **Queries:** *"I want a peaceful area suitable for young children"* or *"Close to IT hubs with high connectivity"*.
 * **Technology:** We will implement vector embeddings using `text-embedding-004` and PostgreSQL's `pgvector` extension to compute similarity.
 
-### **Module 8 — Locality Intelligence & POIs**
-* Pulls locality metadata from `Locality.poi` and `Locality.intelligence` JSON columns.
-* Formats market averages vs listing prices (e.g., *"Andheri West average is ₹18k/sqft; this flat is a deal at ₹15k/sqft"*).
-
 ---
 
-## ⚙️ Active Model
+## ⚙️ Active Models & Hybrid Routing
 
-We currently use a **single model** with no cascade:
+We use a hybrid model routing setup using the Interactions API:
 
-```
-gemini-3.1-flash-lite  (development / testing)
-```
+1. **Standard Conversation:** `gemini-3.1-flash-lite` handles general user preferences, completeness checks, and recommendation execution.
+2. **Maps Grounding Queries:** `gemini-3.1-flash-lite` with the `google_maps` grounding tool handles commute, travel time, and transit queries.
 
-To upgrade to production, change `ACTIVE_MODEL` in:
-- `src/modules/extraction/gemini.service.ts`
-- `src/modules/explanation/explanation.engine.ts`
-
-```ts
-const ACTIVE_MODEL = 'gemini-3.5-flash';  // production
-```
+To upgrade standard flows to production, configure:
+- `ACTIVE_MODEL = 'gemini-3.5-flash'` in `src/modules/extraction/gemini.service.ts` and `src/modules/explanation/explanation.engine.ts`.

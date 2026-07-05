@@ -119,6 +119,8 @@ export async function fetchCandidates(
       furnishedStatus: true,
       isResale: true,
       priceSqft: true,
+      latitude: true,
+      longitude: true,
       locality: {
         select: {
           name: true,
@@ -144,6 +146,8 @@ export async function fetchCandidates(
     furnishedStatus: row.furnishedStatus,
     isResale: row.isResale,
     priceSqft: row.priceSqft,
+    latitude: row.latitude,
+    longitude: row.longitude,
     localityPoi: row.locality?.poi as any,
     localityIntelligence: row.locality?.intelligence as any,
   }));

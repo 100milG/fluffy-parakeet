@@ -90,6 +90,8 @@ export interface RawProperty {
   furnishedStatus: string | null;
   isResale: boolean;
   priceSqft: number | null;
+  latitude: number | null;
+  longitude: number | null;
   localityPoi?: Record<string, string[]> | null;
   localityIntelligence?: {
     price_trend?: string;

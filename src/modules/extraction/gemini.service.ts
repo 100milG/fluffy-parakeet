@@ -371,3 +371,54 @@ export async function generateReply(
     };
   }
 }
+
+export async function generateGroundedReply(
+  query: string,
+  listings: ScoredProperty[],
+  lastInteractionId?: string
+): Promise<{ reply: string; interactionId: string }> {
+  try {
+    const client = getClient();
+
+    // Use the first listing's coordinates as the Maps anchor point
+    const anchor = listings.find(p => p.latitude && p.longitude);
+    const anchorLat = anchor?.latitude ?? 19.0760;  // Mumbai center fallback
+    const anchorLng = anchor?.longitude ?? 72.8777;
+
+    const propertyLocations = listings.map((p, i) => {
+      const coordStr = p.latitude && p.longitude
+        ? `Coordinates: ${p.latitude}, ${p.longitude}`
+        : 'Coordinates: Not available';
+      return `${i + 1}. **${p.title}**\n   Address: ${p.address || 'Mumbai'}\n   ${coordStr}`;
+    }).join('\n\n');
+
+    const systemPrompt = `You are Reeva, an AI real estate assistant for Mumbai real estate.
+The user is asking a geographical, travel, commute, or point of interest question about the properties below.
+Use the Google Maps tool to retrieve accurate real-world travel distances, commute times, and nearby places.
+Give specific distances and times — avoid vague ranges like "15 to 20 minutes". Use the property coordinates provided.
+
+Properties:
+${propertyLocations}
+
+Answer conversationally and concisely.`;
+
+    const interaction = await client.interactions.create({
+      model: 'gemini-3.1-flash-lite',
+      input: query,
+      system_instruction: systemPrompt,
+      tools: [{ type: 'google_maps', latitude: anchorLat, longitude: anchorLng }],
+    } as any);
+
+    return {
+      reply: interaction.output_text ?? '',
+      interactionId: interaction.id,
+    };
+  } catch (err: any) {
+    console.error('[GeminiService] Error during grounded query:', err.message || err);
+    return {
+      reply: "I'm having trouble retrieving real-time map details right now. Please try again in a moment.",
+      interactionId: lastInteractionId || '',
+    };
+  }
+}
+
