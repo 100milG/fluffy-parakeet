@@ -51,19 +51,18 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
   // reply. This saves one full Gemini call per greeting/thank-you/filler message.
   const GREETING_PATTERNS = [
     /^(hi|hello|hey|hiya|howdy|namaste|good\s+(morning|afternoon|evening|day))[\s!?.]*$/i,
-    /^(thanks?|thank\s+you|thx|ty|cheers|great|awesome|nice|ok|okay|cool|got\s+it|sounds\s+good)[\s!?.]*$/i,
+    /^(thanks?|thank\s+you|thx|ty|cheers|great|awesome|nice|cool|got\s+it|sounds\s+good)[\s!?.]*$/i,
     /^(start\s+over|restart|reset|begin\s+again|new\s+chat)[\s!?.]*$/i,
     /^(bye|goodbye|see\s+ya|later|cya)[\s!?.]*$/i,
   ];
 
   const GREETING_REPLIES = [
-    "Hi there! I'm Reeva, your Mumbai property guide. What kind of flat or property are you looking for?",
+    "Hi there! I'm Sudesh, your Mumbai property guide. What kind of flat or property are you looking for?",
     "Hello! Great to have you here. Tell me — are you looking to buy or rent in Mumbai?",
-    "Hey! I'm Reeva. Looking for a flat in Mumbai? Tell me your preferred area, budget, and how many bedrooms you need!",
+    "Hey! I'm Sudesh. Looking for a flat in Mumbai? Tell me your preferred area, budget, and how many bedrooms you need!",
   ];
 
-  const isGreeting = GREETING_PATTERNS.some(re => re.test(trimmedMessage))
-    || trimmedMessage.split(/\s+/).length <= 2; // ≤2 words and not a real query
+  const isGreeting = GREETING_PATTERNS.some(re => re.test(trimmedMessage));
 
   if (isGreeting) {
     const reply = GREETING_REPLIES[Math.floor(Math.random() * GREETING_REPLIES.length)]!;
@@ -185,7 +184,7 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
       updatePreferences(session.sessionId, mergedPrefs);
     }
 
-    // Save Reeva reply turn
+    // Save Sudesh reply turn
     addTurn(session.sessionId, 'model', responseObj.reply);
 
     const finalSession = getSession(session.sessionId)!;

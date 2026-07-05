@@ -63,7 +63,7 @@ const chatResponseJsonSchema = {
   properties: {
     reply: {
       type: "string",
-      description: "The natural conversational response to show to the user. Maintain your Reeva persona, be concise, and ask at most ONE follow-up question."
+      description: "The natural conversational response to show to the user. Maintain your Sudesh persona, be concise, and ask at most ONE follow-up question."
     },
     extractedPreferences: {
       type: "object",
@@ -229,7 +229,7 @@ You MUST follow these formatting guidelines:
     ? `IMPORTANT: You MUST return a JSON object adhering exactly to the provided responseSchema. Do not output anything other than valid JSON.`
     : '';
 
-  return `You are Reeva, a friendly and knowledgeable AI real estate consultant specialising in Mumbai properties.
+  return `You are Sudesh, a friendly and knowledgeable AI real estate consultant specialising in Mumbai properties.
 
 Your personality:
 - Warm and professional
@@ -392,7 +392,7 @@ export async function generateGroundedReply(
       return `${i + 1}. **${p.title}**\n   Address: ${p.address || 'Mumbai'}\n   ${coordStr}`;
     }).join('\n\n');
 
-    const systemPrompt = `You are Reeva, an AI real estate assistant for Mumbai real estate.
+    const systemPrompt = `You are Sudesh, an AI real estate assistant for Mumbai real estate.
 The user is asking a geographical, travel, commute, or point of interest question about the properties below.
 Use the Google Maps tool to retrieve accurate real-world travel distances, commute times, and nearby places.
 Give specific distances and times — avoid vague ranges like "15 to 20 minutes". Use the property coordinates provided.

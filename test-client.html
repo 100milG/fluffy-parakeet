@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reeva AI Chatbot — Test Client</title>
+  <title>Sudesh AI Chatbot — Test Client</title>
   <style>
     :root {
       --bg: #0b0f19;
@@ -269,7 +269,7 @@
   <div class="container">
     <div class="header">
       <div class="header-info">
-        <h1>Reeva AI Chatbot</h1>
+        <h1>Sudesh AI Chatbot</h1>
         <p>Local Test Environment — Module 4 (Explanation Engine)</p>
       </div>
       <div class="status-badge">
@@ -282,8 +282,8 @@
       <div class="chat-container">
         <div class="messages" id="messages-pane">
           <div class="message bot">
-            <div class="bubble">Namaste! I am Reeva, your AI property assistant. What kind of flat are you looking for in Mumbai today?</div>
-            <div class="meta">Reeva • Just now</div>
+            <div class="bubble">Namaste! I am Sudesh, your AI property assistant. What kind of flat are you looking for in Mumbai today?</div>
+            <div class="meta">Sudesh • Just now</div>
           </div>
         </div>
 
@@ -373,7 +373,7 @@
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.innerText = `${role === 'user' ? 'You' : 'Reeva'} • ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+      meta.innerText = `${role === 'user' ? 'You' : 'Sudesh'} • ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 
       msgDiv.appendChild(bubble);
       msgDiv.appendChild(meta);

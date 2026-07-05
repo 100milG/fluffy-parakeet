@@ -1,6 +1,6 @@
 # AI Realty Chatbot Server
 
-This is the backend API and conversational intelligence layer for **Reeva**, a premium AI real estate assistant specializing in Mumbai properties.
+This is the backend API and conversational intelligence layer for **Sudesh**, a premium AI real estate assistant specializing in Mumbai properties.
 
 > **Supporting Project Note:** This service functions as a standalone microservice supporting the main **AI Realty** portal. It parses search preferences, queries the PostgreSQL database for matching listings, scores candidates deterministically, and presents them conversationally.
 
@@ -90,6 +90,6 @@ We provide an interactive HTML/CSS UI client for testing:
 1. Open [test-client.html](test-client.html) directly in your browser (`file:///` protocol supported).
 2. Enter your message (e.g., *"Hi, I want a 2 BHK in Bandra West under 3 Crores"*).
 3. The client will connect to your local backend at `http://localhost:3001/api/chat` and show:
-   - Chat conversation bubble with Reeva's replies.
+   - Chat conversation bubble with Sudesh's replies.
    - Extracted preferences panel updating live on the sidebar.
    - Interactive button to explain matching scores deterministically.
