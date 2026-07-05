@@ -1,38 +1,14 @@
-﻿// ─────────────────────────────────────────────────────────────────────────────
-// Module 3 — Scorer
-//
-// CONCEPT: Deterministic scoring (no LLM)
-//
-// This function awards points based on how well a property matches the user's
-// preferences. It is:
-//   - Free (no API calls)
-//   - Instant (pure computation)
-//   - Testable (given same input, always same output)
-//
-// Scoring is ADDITIVE. Each signal contributes up to its max points.
-// Total possible score = 100.
-//
-// The LLM never scores — it only PRESENTS the scored results.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { UserPreferences, RawProperty, ScoredProperty } from './types';
 
-// ─── Score weights ────────────────────────────────────────────────────────────
 const WEIGHTS = {
-  budget:      30,   // Most important
-  beds:        20,   // Must match intent
-  locality:    20,   // Location is key in Mumbai
-  furnished:   10,   // Furnished preference
-  readyToMove: 10,   // Must-have for many buyers
-  listingType: 10,   // SALE vs RENT must match
+  budget:      30,
+  beds:        20,
+  locality:    20,
+  furnished:   10,
+  readyToMove: 10,
+  listingType: 10,
 } as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Score a single property against the user's accumulated preferences.
- * Returns a ScoredProperty with a numeric score (0–100) and breakdown.
- */
 export function scoreProperty(
   property: RawProperty,
   prefs: Partial<UserPreferences>,
@@ -40,7 +16,7 @@ export function scoreProperty(
   let score = 0;
   const breakdown: Record<string, number> = {};
 
-  // ── 1. Budget (0–30) ─────────────────────────────────────────────────────
+  // 1. Budget
   if (prefs.budgetMax != null && property.price != null) {
     const max = prefs.budgetMax;
     const price = property.price;
@@ -56,7 +32,7 @@ export function scoreProperty(
     breakdown['budget'] = Math.round(WEIGHTS.budget / 2);
   }
 
-  // ── 2. Bedrooms (0–20) ───────────────────────────────────────────────────
+  // 2. Bedrooms
   if (prefs.bedroomsMin != null && property.beds != null) {
     const diff = Math.abs(property.beds - prefs.bedroomsMin);
     if (diff === 0) {
@@ -70,7 +46,7 @@ export function scoreProperty(
     breakdown['beds'] = Math.round(WEIGHTS.beds / 2);
   }
 
-  // ── 3. Locality (0–20) ───────────────────────────────────────────────────
+  // 3. Locality
   if (prefs.localities && prefs.localities.length > 0 && property.localityName) {
     const propLocLower = property.localityName.toLowerCase();
     const matched = prefs.localities.some(loc =>
@@ -82,7 +58,7 @@ export function scoreProperty(
     breakdown['locality'] = Math.round(WEIGHTS.locality / 2);
   }
 
-  // ── 4. Furnished status (0–10) ───────────────────────────────────────────
+  // 4. Furnished status
   if (prefs.furnishedStatus && property.furnishedStatus) {
     const match =
       property.furnishedStatus.toLowerCase() === prefs.furnishedStatus.toLowerCase();
@@ -91,7 +67,7 @@ export function scoreProperty(
     breakdown['furnished'] = Math.round(WEIGHTS.furnished / 2);
   }
 
-  // ── 5. Ready to move (0–10) ──────────────────────────────────────────────
+  // 5. Ready to move
   if (prefs.mustHaves?.includes('ready_to_move')) {
     const isReady =
       property.isResale === true ||
@@ -101,7 +77,7 @@ export function scoreProperty(
     breakdown['readyToMove'] = Math.round(WEIGHTS.readyToMove / 2);
   }
 
-  // ── 6. Listing type (0–10) ───────────────────────────────────────────────
+  // 6. Listing type
   if (prefs.listingType && property.listingType) {
     breakdown['listingType'] =
       property.listingType === prefs.listingType ? WEIGHTS.listingType : 0;
@@ -109,15 +85,12 @@ export function scoreProperty(
     breakdown['listingType'] = Math.round(WEIGHTS.listingType / 2);
   }
 
-  // ── Total ─────────────────────────────────────────────────────────────────
+  // Total
   score = Object.values(breakdown).reduce((a, b) => a + b, 0);
 
   return { ...property, score, breakdown };
 }
 
-/**
- * Score and rank an array of properties. Returns sorted highest-score first.
- */
 export function rankProperties(
   properties: RawProperty[],
   prefs: Partial<UserPreferences>,
