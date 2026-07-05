@@ -1,172 +1,133 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Module 4 — Explanation Engine
 //
-// CONCEPT: Why do we need an explanation engine?
+// DESIGN DECISION (quota optimisation):
+// The explanation engine uses ONLY local, deterministic templates to generate
+// "why listing X?" responses. No LLM call is made here.
 //
-// The recommendation scorer (Module 3) already computes a "breakdown" for each
-// property — it knows exactly why each property scored what it did:
-//   { budget: 30, beds: 20, locality: 20, furnished: 5, readyToMove: 5, listingType: 5 }
-//
-// Without this module, that breakdown is invisible to the user.
-//
-// The explanation engine takes that numeric breakdown and asks Gemini to turn
-// it into a friendly, human-readable explanation. This is a good example of
-// "LLM as a formatter" — using the LLM only to present data, not to generate
-// or invent it.
-//
-// CONCEPT: What the LLM does vs. what the code does
-//   Code  → computes exact scores (deterministic, free, testable)
-//   LLM   → narrates the scores (natural language, contextual)
-//
-// We NEVER ask Gemini "why is this a good property?" — that would let it
-// hallucinate. We only ask it to narrate facts we already computed.
+// Rationale: the score breakdown is already a list of facts computed by the
+// recommendation scorer. Narrating those facts does not require an LLM —
+// a template produces an equivalent result at zero API cost.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ScoredProperty, UserPreferences } from '../../shared/types/session.types';
 import { formatIndianAmount } from '../../shared/utils/currency';
 
 
-// Lazy Gemini client
-let _genAI: GoogleGenerativeAI | null = null;
-function getClient(): GoogleGenerativeAI {
-  if (!_genAI) {
-    const apiKey = process.env['GEMINI_API_KEY'];
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
-    _genAI = new GoogleGenerativeAI(apiKey);
-  }
-  return _genAI;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Intent detection
 // ─────────────────────────────────────────────────────────────────────────────
 
 const EXPLAIN_PATTERNS = [
-  /why\s+(is\s+)?(listing|flat|property|option|number|#)?\s*(\d+)/i,
-  /tell\s+me\s+more\s+about\s+(listing|flat|option|number|#)?\s*(\d+)/i,
-  /explain\s+(listing|flat|property|option|number|#)?\s*(\d+)/i,
-  /more\s+(details?|info)\s+(on|about)\s+(listing|flat|option|number|#)?\s*(\d+)/i,
-  /why\s+(this|that)\s+(flat|property|option)/i,
-  /why\s+did\s+you\s+(recommend|suggest|show)/i,
-  /what\s+makes\s+(listing|flat|option|number|#)?\s*(\d+)/i,
+  /why\\s+(is\\s+)?(listing|flat|property|option|number|#)?\\s*(\\d+)/i,
+  /tell\\s+me\\s+more\\s+about\\s+(listing|flat|option|number|#)?\\s*(\\d+)/i,
+  /explain\\s+(listing|flat|property|option|number|#)?\\s*(\\d+)/i,
+  /more\\s+(details?|info)\\s+(on|about)\\s+(listing|flat|option|number|#)?\\s*(\\d+)/i,
+  /why\\s+(this|that)\\s+(flat|property|option)/i,
 ];
 
+/**
+ * Checks if the user is asking "why listing 2?" or "tell me about flat 1".
+ */
 export function isExplainIntent(message: string): boolean {
   return EXPLAIN_PATTERNS.some(re => re.test(message));
 }
 
+/**
+ * Extracts which index listing number the user requested details on.
+ * e.g. "tell me more about #2" -> 2
+ */
 export function extractListingIndex(message: string): number | null {
-  const match = message.match(/(?:listing|flat|property|option|number|#)\s*(\d+)/i)
-    ?? message.match(/\b(\d+)(?:st|nd|rd|th)?\s*(?:listing|flat|option|one)?\b/i);
-  if (match) {
-    const n = parseInt(match[1]!, 10);
-    return isNaN(n) ? null : n;
+  for (const re of EXPLAIN_PATTERNS) {
+    const match = message.match(re);
+    // Find the capture group that contains a number
+    if (match) {
+      for (let i = 1; i < match.length; i++) {
+        if (match[i] && /^\\d+$/.test(match[i])) {
+          return parseInt(match[i], 10);
+        }
+      }
+    }
   }
   return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Explanation generator
+// Narrative generator
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SIGNAL_LABELS: Record<string, string> = {
-  budget:      'Budget fit',
-  beds:        'Bedroom match',
-  locality:    'Location match',
-  furnished:   'Furnishing preference',
-  readyToMove: 'Ready to move in',
-  listingType: 'Sale/Rent type',
-};
-
-const MAX_SCORE: Record<string, number> = {
-  budget: 30, beds: 20, locality: 20, furnished: 10, readyToMove: 10, listingType: 10,
-};
-
+/**
+ * Generates a deterministic, template-based explanation for why a property
+ * was recommended. No LLM call is made — this is a quota-free operation.
+ */
 export async function generateExplanation(
   property: ScoredProperty,
   prefs: Partial<UserPreferences>,
-  listingNum: number,
+  listingNum: number
 ): Promise<string> {
-  const factLines: string[] = [];
-
-  for (const [signal, points] of Object.entries(property.breakdown)) {
-    const label = SIGNAL_LABELS[signal] ?? signal;
-    const max   = MAX_SCORE[signal] ?? 10;
-    const pct   = Math.round((points / max) * 100);
-
-    let detail = '';
-    if (signal === 'budget' && property.price != null) {
-      detail = `property price ${formatIndianAmount(property.price)} vs. user budget ${prefs.budgetMax ? formatIndianAmount(prefs.budgetMax) : '?'}`;
-    } else if (signal === 'beds') {
-      detail = `${property.beds ?? '?'} beds, user wants ${prefs.bedroomsMin ?? '?'}`;
-    } else if (signal === 'locality') {
-      detail = `${property.localityName ?? 'unknown'} vs. ${(prefs.localities ?? []).join(', ')}`;
-    } else if (signal === 'furnished') {
-      detail = `${property.furnishedStatus ?? 'unknown'}`;
-    } else if (signal === 'readyToMove') {
-      detail = property.isResale ? 'resale / ready to move' : 'new / not yet ready';
-    }
-
-    factLines.push(`- ${label}: ${points}/${max} pts (${pct}%)${detail ? ' — ' + detail : ''}`);
-  }
-
-  const price    = property.price   != null ? formatIndianAmount(property.price) : 'Price on request';
-  const sqft     = property.sqft    != null ? `${property.sqft} sq ft` : 'Size not listed';
-  const locality = property.localityName ?? 'Mumbai';
-
-
-  const prompt = `You are Reeva, a friendly Mumbai real estate consultant.
-
-The user asked why Listing ${listingNum} was recommended. Here is the factual data:
-
-Property: ${property.title}
-Location: ${locality}
-Price: ${price}
-Size: ${sqft}
-Bedrooms: ${property.beds ?? '?'} BHK
-Furnished: ${property.furnishedStatus ?? 'Not specified'}
-Total match score: ${property.score}/100
-
-Score breakdown (how well each signal matched the user's needs):
-${factLines.join('\n')}
-
-Write a short, friendly explanation (3-5 sentences) for why this property was recommended.
-Rules:
-- Only mention facts from the data above, do not invent anything
-- Use Indian English naturally (say "flat" not "apartment", use Rs. for prices)
-- Be warm but concise
-- End by asking if they want to schedule a visit or see more options`;
-
-  try {
-    const model = getClient().getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent(prompt);
-    return result.response.text();
-  } catch (err) {
-    console.error('[ExplanationEngine] Gemini error:', err);
-    return buildFallbackExplanation(property, prefs, listingNum);
-  }
+  console.log(`[ExplanationEngine] Building local explanation for listing #${listingNum} (no API call).`);
+  return buildLocalExplanation(property, prefs, listingNum);
 }
 
-function buildFallbackExplanation(
+function buildLocalExplanation(
   property: ScoredProperty,
   prefs: Partial<UserPreferences>,
-  listingNum: number,
+  listingNum: number
 ): string {
   const price    = property.price != null ? formatIndianAmount(property.price) : 'competitive price';
   const locality = property.localityName ?? 'your preferred area';
+  const b        = property.breakdown;
   const reasons: string[] = [];
-  const b = property.breakdown;
 
-  if ((b['budget'] ?? 0) >= 25) reasons.push(`priced at ${price}, within your budget`);
-  if ((b['beds'] ?? 0) >= 20)   reasons.push(`exactly ${property.beds} BHK as requested`);
-  if ((b['locality'] ?? 0) >= 20) reasons.push(`located in ${locality}`);
-  if ((b['furnished'] ?? 0) >= 10) reasons.push(`${property.furnishedStatus} as preferred`);
+  if ((b['budget'] ?? 0) === 30) reasons.push(`priced at ${price}, well within your budget`);
+  else if ((b['budget'] ?? 0) > 0) reasons.push(`priced at ${price}, slightly over budget but negotiable`);
+
+  if ((b['beds'] ?? 0) >= 20)     reasons.push(`exactly ${property.beds} BHK as requested`);
+  else if ((b['beds'] ?? 0) > 0)  reasons.push(`${property.beds} BHK, close to your bedroom requirement`);
+
+  if ((b['locality'] ?? 0) >= 20) reasons.push(`located in ${locality}, your preferred area`);
+  if ((b['furnished'] ?? 0) >= 10) reasons.push(`${property.furnishedStatus?.toLowerCase()} as preferred`);
+  if ((b['readyToMove'] ?? 0) > 0) reasons.push(`ready to move in`);
+  if ((b['listingType'] ?? 0) > 0) reasons.push(`listed for ${prefs.listingType === 'RENT' ? 'rent' : 'sale'} as requested`);
 
   const reasonText = reasons.length > 0
     ? reasons.join(', ')
-    : 'it matches several of your key requirements';
+    : 'it broadly matches your stated requirements';
 
-  return `Listing ${listingNum} scored ${property.score}/100 because ${reasonText}. Would you like to schedule a visit or see more options?`;
+  const sqftNote = property.sqft ? ` The flat is ${property.sqft} sq ft.` : '';
+
+  let marketNote = '';
+  if (property.localityIntelligence) {
+    const intel = property.localityIntelligence as any;
+    const avg = intel.average_price_sqft;
+    const listPriceSqft = property.priceSqft || (property.price && property.sqft ? property.price / property.sqft : null);
+    if (avg && listPriceSqft) {
+      const diff = ((listPriceSqft - avg) / avg) * 100;
+      if (diff < -2) {
+        marketNote = ` It is priced at ₹${formatIndianAmount(Math.round(listPriceSqft))}/sqft, which is a great deal at **${Math.abs(Math.round(diff))}% below the area average** (₹${formatIndianAmount(avg)}/sqft).`;
+      } else if (diff > 2) {
+        marketNote = ` It is priced at ₹${formatIndianAmount(Math.round(listPriceSqft))}/sqft, which is slightly above the area average of ₹${formatIndianAmount(avg)}/sqft.`;
+      } else {
+        marketNote = ` It is priced at a standard ₹${formatIndianAmount(Math.round(listPriceSqft))}/sqft, in line with the area average.`;
+      }
+    }
+  }
+
+  let attractionsNote = '';
+  if (property.localityPoi) {
+    const poi = property.localityPoi as any;
+    const categories: string[] = [];
+    if (poi.parks?.length) categories.push(`parks like ${poi.parks.join(', ')}`);
+    if (poi.shopping?.length) categories.push(`shopping at ${poi.shopping.join(', ')}`);
+    if (poi.schools?.length) categories.push(`schools such as ${poi.schools.join(', ')}`);
+    if (poi.dining?.length) categories.push(`dining hot-spots like ${poi.dining.join(', ')}`);
+    if (poi.transport?.length) categories.push(`convenient transport links (${poi.transport.join(', ')})`);
+
+    if (categories.length > 0) {
+      attractionsNote = ` The neighborhood offers great attractions: ${categories.slice(0, 3).join(', ')}.`;
+    }
+  }
+
+  return `Listing ${listingNum} — **${property.title}** — scored ${property.score}/100 because ${reasonText}.${sqftNote}${marketNote}${attractionsNote} Would you like to schedule a visit or see more options?`;
 }
-

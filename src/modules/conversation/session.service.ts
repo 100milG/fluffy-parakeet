@@ -123,6 +123,17 @@ export function saveRecommendations(sessionId: string, listings: ScoredProperty[
 }
 
 /**
+ * Updates the lastInteractionId for server-side state tracking.
+ */
+export function updateInteractionId(sessionId: string, interactionId: string): void {
+  const session = sessionStore.get(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+  session.lastInteractionId = interactionId;
+  session.lastActiveAt = new Date();
+}
+
+
+/**
  * Returns a summary of how many sessions are currently in memory.
  * Useful for health checks and debugging.
  */

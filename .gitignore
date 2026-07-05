@@ -22,3 +22,7 @@ yarn-error.log
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Documentation markdown files (keep README.md only)
+*.md
+!README.md

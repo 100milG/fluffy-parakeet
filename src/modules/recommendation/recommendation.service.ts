@@ -1,4 +1,4 @@
-﻿// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // Module 3 — Recommendation Service (Orchestrator)
 //
 // CONCEPT: This is the public API for the recommendation engine.
@@ -16,7 +16,8 @@ import { UserPreferences, ScoredProperty } from './types';
 import { fetchCandidates } from './property.service';
 import { rankProperties } from './scorer';
 
-const TOP_N = 5;   // Return top 5 results to Gemini
+const TOP_N = 5;            // Return at most top 5 results to Gemini
+const SCORE_THRESHOLD = 50;  // Minimum relevance score (out of 100) to qualify as a match
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -24,10 +25,10 @@ const TOP_N = 5;   // Return top 5 results to Gemini
  * Main entry point for the recommendation engine.
  *
  * Given the user's accumulated preferences, queries the database,
- * scores all candidates, and returns the top-N ranked properties.
+ * scores all candidates, and returns the top-N qualified properties.
  *
  * @param prefs - The accumulated UserPreferences from the session
- * @returns Top-N ScoredProperty objects sorted by score descending
+ * @returns Top-N ScoredProperty objects sorted by score descending (score >= 50)
  */
 export async function getRecommendations(
   prefs: Partial<UserPreferences>,
@@ -46,8 +47,12 @@ export async function getRecommendations(
   // Step 2: Score + rank all candidates
   const ranked = rankProperties(candidates, prefs);
 
-  // Step 3: Return top N
-  const topN = ranked.slice(0, TOP_N);
+  // Step 3: Filter by minimum quality threshold
+  const qualified = ranked.filter(p => p.score >= SCORE_THRESHOLD);
+  console.log(`[RecommendationEngine] ${qualified.length} / ${ranked.length} candidates met score threshold of ${SCORE_THRESHOLD}`);
+
+  // Step 4: Return top N
+  const topN = qualified.slice(0, TOP_N);
   console.log(
     '[RecommendationEngine] Top results:',
     topN.map(p => `${p.title} (score=${p.score})`).join(', '),

@@ -5,6 +5,7 @@ import {
   addTurn,
   updatePreferences,
   saveRecommendations,
+  updateInteractionId,
   getStoreStats,
 } from './session.service';
 import { ChatRequest, ChatResponse, ScoredProperty } from '../../shared/types/session.types';
@@ -14,33 +15,10 @@ import { getRateLimitStats } from '../../middleware/rate.limiter';
 import { getRecommendations } from '../recommendation/recommendation.service';
 import { isExplainIntent, extractListingIndex, generateExplanation } from '../explanation/explanation.engine';
 
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CONCEPT: The Module 2 chat pipeline
-//
-// Every incoming message now goes through these steps:
-//
-//  1. Resolve session (create or look up)
-//  2. Store user message as a turn
-//  3. EXTRACT preferences from the message (rule-based, free, instant)
-//  4. MERGE extracted preferences with session's accumulated preferences
-//  5. PERSIST the updated preferences back to the session
-//  6. CHECK completeness (what's still missing?)
-//  7. Generate a FOLLOW-UP question if something critical is missing
-//  8. Call GEMINI to produce a natural conversational reply
-//     (Gemini knows the preferences + what's missing + the follow-up question)
-//  9. Store the AI reply as a turn
-// 10. Return the response
-//
-// Notice that step 8 (LLM) happens AFTER step 3-7 (rules).
-// The LLM gets the full context so it can write an appropriate response.
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * POST /api/chat
  *
- * Main chat handler — now wired to Module 2 preference extraction + Gemini.
+ * Main chat handler — now wired with Structured Outputs and Function Calling (Module 5).
  */
 export async function handleChat(req: Request, res: Response): Promise<void> {
   const { sessionId, message } = req.body as ChatRequest;
@@ -68,22 +46,50 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
 
   const trimmedMessage = message.trim();
 
+  // ── Static Greeting Guard (Method 1 — quota optimisation) ──────────────────
+  // Short/social messages that carry no real estate intent get an instant local
+  // reply. This saves one full Gemini call per greeting/thank-you/filler message.
+  const GREETING_PATTERNS = [
+    /^(hi|hello|hey|hiya|howdy|namaste|good\s+(morning|afternoon|evening|day))[\s!?.]*$/i,
+    /^(thanks?|thank\s+you|thx|ty|cheers|great|awesome|nice|ok|okay|cool|got\s+it|sounds\s+good)[\s!?.]*$/i,
+    /^(start\s+over|restart|reset|begin\s+again|new\s+chat)[\s!?.]*$/i,
+    /^(bye|goodbye|see\s+ya|later|cya)[\s!?.]*$/i,
+  ];
+
+  const GREETING_REPLIES = [
+    "Hi there! I'm Reeva, your Mumbai property guide. What kind of flat or property are you looking for?",
+    "Hello! Great to have you here. Tell me — are you looking to buy or rent in Mumbai?",
+    "Hey! I'm Reeva. Looking for a flat in Mumbai? Tell me your preferred area, budget, and how many bedrooms you need!",
+  ];
+
+  const isGreeting = GREETING_PATTERNS.some(re => re.test(trimmedMessage))
+    || trimmedMessage.split(/\s+/).length <= 2; // ≤2 words and not a real query
+
+  if (isGreeting) {
+    const reply = GREETING_REPLIES[Math.floor(Math.random() * GREETING_REPLIES.length)]!;
+    console.log(`[ChatController] Static greeting reply sent (no API call). Message: "${trimmedMessage}"`);
+    addTurn(session.sessionId, 'user', trimmedMessage);
+    addTurn(session.sessionId, 'model', reply);
+    const freshSess = getSession(session.sessionId)!;
+    res.status(200).json({
+      sessionId: freshSess.sessionId,
+      reply,
+      preferences: freshSess.preferences,
+      turnCount: freshSess.turns.length,
+    } as ChatResponse);
+    return;
+  }
+
   // ── Store user's message ───────────────────────────────────────────────────
+
   addTurn(session.sessionId, 'user', trimmedMessage);
 
   // ── Step 3: Detect "explain listing N" intent (Module 4) ──────────────────
-  //
-  // CONCEPT: We check for explain intent BEFORE running preference extraction.
-  // If the user is asking "why listing 2?", we don't need to re-extract prefs.
-  // We just look up the stored recommendations from the session and explain them.
-  // This short-circuits the rest of the pipeline and returns immediately.
-  //
   if (isExplainIntent(trimmedMessage)) {
     const currentSession = getSession(session.sessionId)!;
     const stored = currentSession.lastRecommendations;
 
     if (stored && stored.length > 0) {
-      // Which listing is the user asking about? Default to #1.
       const rawIdx = extractListingIndex(trimmedMessage);
       const listingNum = rawIdx != null ? rawIdx : 1;
       const property   = stored[listingNum - 1] ?? stored[0]!;
@@ -101,110 +107,83 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
       } as ChatResponse);
       return;
     }
-    // If no stored recommendations yet, fall through to normal flow
   }
 
-  // ── Step 3: Extract preferences from this message ───────────────────────
-  //
-  // CONCEPT: We only extract from the LATEST message, not the full history.
-  // The mergePreferences() call below accumulates results across all turns.
-  //
-  const newPrefs = extractPreferences(trimmedMessage);
-
-  // ── Step 4: Merge with existing preferences ─────────────────────────────
-  const updatedPrefs = mergePreferences(session.preferences, newPrefs);
-
-  // ── Step 5: Persist back to session ────────────────────────────────────
+  // ── Step 4: Rule-based fast preference extraction (Layer 1) ───────────────
+  const rulePrefs = extractPreferences(trimmedMessage);
+  let updatedPrefs = mergePreferences(session.preferences, rulePrefs);
   updatePreferences(session.sessionId, updatedPrefs);
 
-  // ── Step 6-7: Completeness check + follow-up question ──────────────────
-  const missingFields = getMissingFields(updatedPrefs);
-  const followUpQuestion = generateFollowUp(missingFields);
+  // ── Step 5: Completeness check + follow-up question ──────────────────────
+  let freshSession = getSession(session.sessionId)!;
+  let missingFields = getMissingFields(freshSession.preferences);
+  let followUpQuestion = generateFollowUp(missingFields);
 
-  // ── Step 8: Detect "show me listings" intent ─────────────────────────
-  //
-  // CONCEPT: Intent detection (rule-based, not LLM)
-  //
-  // We detect user intent to see listings with a simple regex.
-  // We only call the recommendation engine when:
-  //   a) All critical fields (locality, budget, bedrooms) are collected, AND
-  //   b) The user has signalled they want to see results
-  //      ("yes", "show me", "find properties", etc.)
-  //
-  // This avoids querying the DB on every message and saves Prisma calls.
-  //
-  const SHOW_LISTING_PATTERNS = [
-    /\byes\b/i,
-    /show\s*(me)?\s*(the\s*)?(listings?|properties|flats?|results?)/i,
-    /find\s*(me\s*)?(properties|flats?|listings?)/i,
-    /\bsearch\b/i,
-    /\blet'?s\s+see\b/i,
-    /\bgo\s+ahead\b/i,
-    /\bsure\b/i,
-    /\bplease\b.*\bshow\b/i,
-  ];
+  // ── Step 6: Call Gemini (Structured JSON reply + Function Calling) ─────────
+  try {
+    const responseObj = await generateReply(
+      freshSession.turns,
+      {
+        preferences: freshSession.preferences,
+        missingFields,
+        followUpQuestion,
+        lastInteractionId: freshSession.lastInteractionId,
+      },
+      async (searchParams) => {
+        console.log('[ChatController] Tool execution triggered with params:', searchParams);
+        
+        // Match schemas to preferences (localities list, budget, beds)
+        const partialPrefs: any = {
+          localities: searchParams.localities,
+          budgetMax: searchParams.budgetMax,
+          bedroomsMin: searchParams.bedroomsMin,
+          bedroomsMax: searchParams.bedroomsMin
+        };
 
-  const freshSession = getSession(session.sessionId)!;
+        // Persist tool arguments back to session preferences
+        const merged = mergePreferences(freshSession.preferences, partialPrefs);
+        updatePreferences(session.sessionId, merged);
 
-  const wantsListings = missingFields.length === 0 &&
-    SHOW_LISTING_PATTERNS.some(re => re.test(trimmedMessage));
-
-  // Also auto-show if all fields collected AND this is the first complete message
-  // (e.g. user gave everything in one shot)
-  const isCompleteFirstTime = missingFields.length === 0 && freshSession.turns.length <= 2;
-
-  let listings: ScoredProperty[] = [];
-
-  if (wantsListings || isCompleteFirstTime) {
-    try {
-      listings = await getRecommendations(updatedPrefs);
-      console.log(`[ChatController] Recommendation engine returned ${listings.length} results`);
-
-      // ── Save to session so the explanation engine can reference them ──────
-      if (listings.length > 0) {
-        saveRecommendations(session.sessionId, listings);
+        // Run PostgreSQL Prisma query
+        const listings = await getRecommendations(merged);
+        if (listings.length > 0) {
+          saveRecommendations(session.sessionId, listings);
+        }
+        return listings;
       }
-    } catch (err) {
-      // Non-fatal: if DB is down, still reply conversationally without listings
-      console.error('[ChatController] Recommendation engine error:', err);
+    );
+
+    // Persist session-interaction tokens
+    updateInteractionId(session.sessionId, responseObj.interactionId);
+
+    // Persist Gemini structured preference extraction results (Layer 2)
+    if (responseObj.extractedPreferences) {
+      console.log('[ChatController] Extracted preferences from Gemini responseSchema:', responseObj.extractedPreferences);
+      const mergedPrefs = mergePreferences(freshSession.preferences, responseObj.extractedPreferences);
+      updatePreferences(session.sessionId, mergedPrefs);
     }
+
+    // Save Reeva reply turn
+    addTurn(session.sessionId, 'model', responseObj.reply);
+
+    const finalSession = getSession(session.sessionId)!;
+    res.status(200).json({
+      sessionId: finalSession.sessionId,
+      reply: responseObj.reply,
+      preferences: finalSession.preferences,
+      turnCount: finalSession.turns.length,
+    } as ChatResponse);
+
+  } catch (err) {
+    console.error('[ChatController] Error processing Gemini response:', err);
+    res.status(500).json({ error: 'Internal server error processing response.' });
   }
-
-
-  // ── Step 9: Call Gemini ───────────────────────────────────────────────
-  //
-  // We fetch the FRESH session (post preference update) to get the latest turns.
-  //
-  const freshSession2 = getSession(session.sessionId)!;
-
-  const reply = await generateReply(freshSession2.turns, {
-    preferences: updatedPrefs,
-    missingFields,
-    followUpQuestion,
-    listings: listings.length > 0 ? listings : undefined,
-  });
-
-  // ── Step 10: Store AI reply ────────────────────────────────────────────
-  addTurn(session.sessionId, 'model', reply);
-
-  // ── Step 11: Send response ────────────────────────────────────────────
-  const finalSession = getSession(session.sessionId)!;
-
-  const response: ChatResponse = {
-    sessionId: finalSession.sessionId,
-    reply,
-    preferences: finalSession.preferences,
-    turnCount: finalSession.turns.length,
-  };
-
-  res.status(200).json(response);
 }
 
 /**
  * GET /api/chat/:sessionId
  *
  * Returns the full session state for debugging.
- * Shows extracted preferences in real-time — very useful during development.
  */
 export function getSessionState(req: Request, res: Response): void {
   const sessionId = req.params['sessionId'] as string;
@@ -235,8 +214,18 @@ export function getSessionState(req: Request, res: Response): void {
 export function healthCheck(_req: Request, res: Response): void {
   res.status(200).json({
     status: 'ok',
-    module: 'Module 4 — Explanation Engine',
+    module: 'Module 5 — Structured Outputs & Function Calling',
     ...getStoreStats(),
     ...getRateLimitStats(),
+  });
+}
+
+/**
+ * GET /api/health Check Server details
+ */
+export function healthCheckDetails(_req: Request, res: Response): void {
+  res.status(200).json({
+    status: 'ok',
+    module: 'Module 5 — Structured Outputs & Function Calling',
   });
 }

@@ -4,10 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node src/server.ts",
+    "dev": "ts-node --transpile-only src/server.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:import": "ts-node scripts/import.ts",
+    "db:import": "ts-node --transpile-only scripts/import.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -15,12 +15,12 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "@prisma/client": "^7.8.0",
+    "@google/genai": "^2.10.0",
+    "@prisma/client": "5.12.1",
     "csv-parser": "^3.2.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "prisma": "^7.8.0",
+    "prisma": "5.12.1",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   },

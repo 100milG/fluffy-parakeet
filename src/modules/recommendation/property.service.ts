@@ -120,7 +120,11 @@ export async function fetchCandidates(
       isResale: true,
       priceSqft: true,
       locality: {
-        select: { name: true },
+        select: {
+          name: true,
+          poi: true,
+          intelligence: true,
+        },
       },
     },
   });
@@ -140,5 +144,7 @@ export async function fetchCandidates(
     furnishedStatus: row.furnishedStatus,
     isResale: row.isResale,
     priceSqft: row.priceSqft,
+    localityPoi: row.locality?.poi as any,
+    localityIntelligence: row.locality?.intelligence as any,
   }));
 }

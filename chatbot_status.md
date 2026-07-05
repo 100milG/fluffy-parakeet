@@ -56,14 +56,16 @@ Our system is built on a key constraint: **The LLM (Gemini) must never query the
 - Feeds the calculated score breakdown to Gemini to explain the recommendation.
 - **Visual Client:** HTML/CSS test client ([test-client.html](test-client.html)) created to test chat and view extracted preferences live in the browser.
 
+### **Module 5 — Structured Outputs, Function Calling & Score Threshold**
+- Migrated from deprecated `@google/generative-ai` to the new `@google/genai` (≥ 2.0.0) SDK.
+- Implemented structured preference extraction schema using responseSchema constraints.
+- Created `search_properties` function tool which Reeva autonomously invokes when preferences are collected and the user is ready.
+- Implemented step execution handler loop resolving queries on PostgreSQL and submitting results back to the model.
+- Added **score threshold filter** (`SCORE_THRESHOLD = 50`): properties scoring below 50/100 are excluded before presenting results. If nothing qualifies, Reeva handles it conversationally.
+
 ---
 
 ## 🚧 Upcoming Modules & Technical Designs
-
-### **Module 5 — Structured Outputs & Function Calling Refactor**
-Replace custom regex rules with native Gemini tool configurations.
-* **Structured Outputs:** Force Gemini to return user preferences matching our exact JSON schema.
-* **Function Calling:** Give Gemini a `search_database` function. Gemini decides exactly when to call it.
 
 ### **Module 6 — Grounding with Google Maps**
 Allows users to ask geographical/lifestyle questions about properties.
@@ -82,23 +84,18 @@ Allows users to search using conceptual/lifestyle sentences instead of keywords.
 
 ---
 
-## 🛡️ Resilience Design: Gemini Model Cascade Fallback
+## ⚙️ Active Model
 
-To bypass rate limits (like 15 RPM on the free tier) and quota blocks, we will implement an automatic fallback cascade. 
-
-### **The Model Chain**
-If a model fails due to a `429 (Too Many Requests)` or quota issue, the service automatically retries the call using the next model in the chain:
+We currently use a **single model** with no cascade:
 
 ```
-[gemini-2.5-flash] (Best)
-        │ 
-        ├─── (429 Rate Limited / Out of Quota) ───> [gemini-2.5-flash-lite] (Cheaper, supports Structured Outputs)
-                                                             │
-                                                             └─── (Failed) ───> [gemini-1.5-flash] (High Quota Limit)
+gemini-3.1-flash-lite  (development / testing)
 ```
 
-### **Hybrid Grounding (Advanced Cost Optimization)**
-To save quota on maps grounding (which is only supported on premium models):
-1. **Chat/Search:** Routed through cheap models (`gemini-2.5-flash-lite`).
-2. **Map Queries:** Only when geographic questions are asked, route a single call to `gemini-2.5-flash` with Google Maps tool grounding.
-3. **Synthesis:** Take the result and insert it back into the conversation history of the cheaper model.
+To upgrade to production, change `ACTIVE_MODEL` in:
+- `src/modules/extraction/gemini.service.ts`
+- `src/modules/explanation/explanation.engine.ts`
+
+```ts
+const ACTIVE_MODEL = 'gemini-3.5-flash';  // production
+```

@@ -44,9 +44,11 @@ export interface Session {
   turns: Turn[];
   preferences: Partial<UserPreferences>;
   lastRecommendations: ScoredProperty[];  // the properties shown in the last recommendation turn
+  lastInteractionId?: string;             // tracks state on Google Interactions API server
   createdAt: Date;
   lastActiveAt: Date;
 }
+
 
 
 /**
@@ -88,6 +90,12 @@ export interface RawProperty {
   furnishedStatus: string | null;
   isResale: boolean;
   priceSqft: number | null;
+  localityPoi?: Record<string, string[]> | null;
+  localityIntelligence?: {
+    price_trend?: string;
+    market_sentiment?: string;
+    average_price_sqft?: number;
+  } | null;
 }
 
 /**
